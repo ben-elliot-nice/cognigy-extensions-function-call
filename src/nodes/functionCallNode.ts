@@ -41,14 +41,38 @@ export const functionCallNode = createNodeDescriptor({
 			optionsResolver: {
 				dependencies: ["connection"],
 				resolverFunction: async (params: any) => {
+					console.log("[FLOW RESOLVER] Started", { paramsKeys: Object.keys(params) });
 					const { api, config } = params;
+
+					console.log("[FLOW RESOLVER] config", config);
+					console.log("[FLOW RESOLVER] root params", params);
 
 					// Try to get connection from config first, fallback to root params
 					const connection = config?.connection || params?.connection;
+					console.log("[FLOW RESOLVER] connection extracted", { connection, hasConnection: !!connection });
 
-					if (!connection || !connection.apiUrl || !connection.apiKey || !connection.projectId) {
+					if (!connection) {
+						console.log("[FLOW RESOLVER] No connection found, returning empty");
 						return [];
 					}
+					if (!connection.apiUrl) {
+						console.log("[FLOW RESOLVER] Missing apiUrl");
+						return [];
+					}
+					if (!connection.apiKey) {
+						console.log("[FLOW RESOLVER] Missing apiKey");
+						return [];
+					}
+					if (!connection.projectId) {
+						console.log("[FLOW RESOLVER] Missing projectId");
+						return [];
+					}
+
+					console.log("[FLOW RESOLVER] All connection data present", {
+						apiUrl: connection.apiUrl,
+						hasApiKey: !!connection.apiKey,
+						projectId: connection.projectId
+					});
 
 					try {
 						// Fetch flows with pagination support
@@ -56,8 +80,12 @@ export const functionCallNode = createNodeDescriptor({
 						let skip = 0;
 						const limit = 100;
 						let hasMore = true;
+						let pageCount = 0;
 
 						while (hasMore) {
+							pageCount++;
+							console.log(`[FLOW RESOLVER] Fetching page ${pageCount}`, { skip, limit });
+
 							const response = await api.httpRequest({
 								method: "GET",
 								url: `${connection.apiUrl}/v2.0/flows`,
@@ -71,6 +99,12 @@ export const functionCallNode = createNodeDescriptor({
 									skip,
 									projectId: connection.projectId
 								}
+							});
+
+							console.log("[FLOW RESOLVER] API response", {
+								status: response.status,
+								hasData: !!response.data,
+								dataKeys: response.data ? Object.keys(response.data) : null
 							});
 
 							// Handle HAL+JSON format: _embedded.flows
@@ -87,21 +121,28 @@ export const functionCallNode = createNodeDescriptor({
 									};
 								});
 
+								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows`);
 								allFlows = allFlows.concat(flows);
 								hasMore = response.data._links?.next !== undefined;
 								skip += limit;
 							} else {
+								console.log("[FLOW RESOLVER] No _embedded.flows in response, stopping pagination");
 								hasMore = false;
 							}
 						}
 
+						console.log(`[FLOW RESOLVER] Total flows fetched: ${allFlows.length}`);
+
 						// Map flows to options array
-						return allFlows.map((flow: any) => ({
+						const options = allFlows.map((flow: any) => ({
 							label: flow.name || flow._id,
 							value: flow._id
 						}));
+
+						console.log("[FLOW RESOLVER] Returning options", options.map(o => ({ label: o.label, value: o.value })));
+						return options;
 					} catch (error) {
-						console.error("Failed to fetch flows:", error);
+						console.error("[FLOW RESOLVER] Error fetching flows:", error);
 						return [];
 					}
 				}
@@ -115,15 +156,28 @@ export const functionCallNode = createNodeDescriptor({
 			optionsResolver: {
 				dependencies: ["connection", "flowId"],
 				resolverFunction: async (params: any) => {
+					console.log("[NODE RESOLVER] Started", { paramsKeys: Object.keys(params) });
 					const { api, config } = params;
+
+					console.log("[NODE RESOLVER] config", config);
+					console.log("[NODE RESOLVER] root params", params);
 
 					// Try to get connection from config first, fallback to root params
 					const connection = config?.connection || params?.connection;
 					const flowId = config?.flowId || params?.flowId;
 
+					console.log("[NODE RESOLVER] Extracted data", {
+						hasConnection: !!connection,
+						hasFlowId: !!flowId,
+						flowId
+					});
+
 					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
+						console.log("[NODE RESOLVER] Missing required data, returning empty");
 						return [];
 					}
+
+					console.log("[NODE RESOLVER] Fetching nodes for flow", { flowId });
 
 					try {
 						// Fetch nodes with pagination support
@@ -131,8 +185,12 @@ export const functionCallNode = createNodeDescriptor({
 						let skip = 0;
 						const limit = 100;
 						let hasMore = true;
+						let pageCount = 0;
 
 						while (hasMore) {
+							pageCount++;
+							console.log(`[NODE RESOLVER] Fetching page ${pageCount}`, { skip, limit });
+
 							const response = await api.httpRequest({
 								method: "GET",
 								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
@@ -147,24 +205,38 @@ export const functionCallNode = createNodeDescriptor({
 								}
 							});
 
+							console.log("[NODE RESOLVER] API response", {
+								status: response.status,
+								hasData: !!response.data,
+								dataKeys: response.data ? Object.keys(response.data) : null
+							});
+
 							if (response.data && response.data.items) {
+								console.log(`[NODE RESOLVER] Page ${pageCount}: found ${response.data.items.length} nodes`);
 								allNodes = allNodes.concat(response.data.items);
 								hasMore = response.data.nextCursor !== null;
 								skip += limit;
 							} else {
+								console.log("[NODE RESOLVER] No items in response, stopping pagination");
 								hasMore = false;
 							}
 						}
 
+						console.log(`[NODE RESOLVER] Total nodes fetched: ${allNodes.length}`);
+
+						const entryPoints = allNodes.filter((node: any) => node.isEntryPoint === true);
+						console.log(`[NODE RESOLVER] Entry points found: ${entryPoints.length}`);
+
 						// Filter to only entry point nodes and map to options
-						return allNodes
-							.filter((node: any) => node.isEntryPoint === true)
-							.map((node: any) => ({
-								label: `${node.label || node.type} (${node._id})`,
-								value: node._id
-							}));
+						const options = entryPoints.map((node: any) => ({
+							label: `${node.label || node.type} (${node._id})`,
+							value: node._id
+						}));
+
+						console.log("[NODE RESOLVER] Returning options", options.map(o => ({ label: o.label, value: o.value })));
+						return options;
 					} catch (error) {
-						console.error("Failed to fetch flow nodes:", error);
+						console.error("[NODE RESOLVER] Error fetching nodes:", error);
 						return [];
 					}
 				}
@@ -239,22 +311,39 @@ export const functionCallNode = createNodeDescriptor({
 		key: "functionName"
 	},
 	function: async ({ cognigy, config }: IFunctionCallNodeParams) => {
+		console.log("[NODE EXECUTION] Function Call node executing");
+
 		const { api } = cognigy;
 		const { flowId, flowNodeId, functionName, payload, outputStorageType, outputStoragePath } = config;
 
+		console.log("[NODE EXECUTION] Config", {
+			flowId,
+			flowNodeId,
+			functionName,
+			hasPayload: !!payload,
+			outputStorageType,
+			outputStoragePath
+		});
+
 		// Validate required fields
 		if (!flowId) {
+			console.error("[NODE EXECUTION] Validation failed: Flow ID is required");
 			throw new Error("Flow ID is required");
 		}
 		if (!flowNodeId) {
+			console.error("[NODE EXECUTION] Validation failed: Flow Node ID is required");
 			throw new Error("Flow Node ID is required");
 		}
 		if (!functionName) {
+			console.error("[NODE EXECUTION] Validation failed: Function Name is required");
 			throw new Error("Function Name is required");
 		}
 		if (!outputStoragePath) {
+			console.error("[NODE EXECUTION] Validation failed: Output Storage Path is required");
 			throw new Error("Output Storage Path is required");
 		}
+
+		console.log("[NODE EXECUTION] Validation passed");
 
 		// Structure the function call data on input
 		const functionCallData = {
@@ -266,9 +355,12 @@ export const functionCallNode = createNodeDescriptor({
 			}
 		};
 
+		console.log("[NODE EXECUTION] Preparing functionCallData", functionCallData);
+
 		// Store on input for the called flow to access
 		// @ts-ignore
 		api.addToInput("functionCall", functionCallData);
+		console.log("[NODE EXECUTION] Stored functionCallData in input");
 
 		// Execute the flow with the configured flow and node
 		const executeConfig: IExecuteFlowNodeConfig = {
@@ -278,7 +370,9 @@ export const functionCallNode = createNodeDescriptor({
 			}
 		};
 
+		console.log("[NODE EXECUTION] Executing flow", executeConfig);
 		api.log("info", `Executing function call: ${functionName} -> Flow: ${flowId}, Node: ${flowNodeId}`);
 		await api.executeFlow(executeConfig);
+		console.log("[NODE EXECUTION] Flow execution completed");
 	}
 });
