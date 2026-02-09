@@ -1,7 +1,17 @@
-import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
+import { createNodeDescriptor, INodeFunctionBaseParams, IResolverParams } from "@cognigy/extension-tools";
+import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
+
+export interface ICognigyApiConnection {
+	apiUrl: string;
+	apiKey: string;
+	projectId: string;
+}
 
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
+		connection: ICognigyApiConnection;
+		flowId: string;
+		flowNodeId: string;
 		functionName: string;
 		payload: any;
 		outputStorageType: string;
@@ -14,6 +24,137 @@ export const functionCallNode = createNodeDescriptor({
 	defaultLabel: "Function Call",
 	summary: "Execute a function with input/output validation through flow calls",
 	fields: [
+		{
+			key: "connection",
+			label: "Cognigy API Connection",
+			type: "connection",
+			description: "Connection to Cognigy API for fetching flows",
+			params: {
+				connectionType: "cognigy-api",
+				required: true
+			}
+		},
+		{
+			key: "flowId",
+			label: "Flow",
+			type: "select",
+			description: "Select the flow to execute",
+			params: {
+				required: true
+			},
+			optionsResolver: {
+				dependencies: ["connection"],
+				resolverFunction: async ({ api, config }: IResolverParams) => {
+					const connection = config.connection as ICognigyApiConnection | undefined;
+
+					if (!connection || !connection.apiUrl || !connection.apiKey || !connection.projectId) {
+						return [];
+					}
+
+					try {
+						// Fetch flows with pagination support
+						let allFlows: any[] = [];
+						let skip = 0;
+						const limit = 100;
+						let hasMore = true;
+
+						while (hasMore) {
+							const response = await api.httpRequest({
+								method: "GET",
+								url: `${connection.apiUrl}/v2.0/flows`,
+								headers: {
+									"X-API-Key": connection.apiKey,
+									"Content-Type": "application/json"
+								},
+								params: {
+									limit,
+									skip
+								}
+							});
+
+							if (response.data && response.data.items) {
+								allFlows = allFlows.concat(response.data.items);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
+							} else {
+								hasMore = false;
+							}
+						}
+
+						// Map flows to options array
+						return allFlows.map((flow: any) => ({
+							label: flow.name || flow._id,
+							value: flow._id
+						}));
+					} catch (error) {
+						console.error("Failed to fetch flows:", error);
+						return [];
+					}
+				}
+			}
+		},
+		{
+			key: "flowNodeId",
+			label: "Flow Node",
+			type: "select",
+			description: "Select the entry point node in the target flow",
+			params: {
+				required: true
+			},
+			optionsResolver: {
+				dependencies: ["connection", "flowId"],
+				resolverFunction: async ({ api, config }: IResolverParams) => {
+					const connection = config.connection as ICognigyApiConnection | undefined;
+					const flowId = config.flowId as string | undefined;
+
+					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
+						return [];
+					}
+
+					try {
+						// Fetch nodes with pagination support
+						let allNodes: any[] = [];
+						let skip = 0;
+						const limit = 100;
+						let hasMore = true;
+
+						while (hasMore) {
+							const response = await api.httpRequest({
+								method: "GET",
+								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
+								headers: {
+									"X-API-Key": connection.apiKey,
+									"Content-Type": "application/json"
+								},
+								params: {
+									limit,
+									skip
+								}
+							});
+
+							if (response.data && response.data.items) {
+								allNodes = allNodes.concat(response.data.items);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
+							} else {
+								hasMore = false;
+							}
+						}
+
+						// Filter to only entry point nodes and map to options
+						return allNodes
+							.filter((node: any) => node.isEntryPoint === true)
+							.map((node: any) => ({
+								label: `${node.label || node.type} (${node._id})`,
+								value: node._id
+							}));
+					} catch (error) {
+						console.error("Failed to fetch flow nodes:", error);
+						return [];
+					}
+				}
+			}
+		},
 		{
 			key: "functionName",
 			label: "Function Name",
@@ -58,6 +199,12 @@ export const functionCallNode = createNodeDescriptor({
 	],
 	sections: [
 		{
+			key: "flowSettings",
+			label: "Flow Settings",
+			defaultCollapsed: false,
+			fields: ["connection", "flowId", "flowNodeId"]
+		},
+		{
 			key: "functionSettings",
 			label: "Function Settings",
 			defaultCollapsed: false,
@@ -71,6 +218,7 @@ export const functionCallNode = createNodeDescriptor({
 		}
 	],
 	form: [
+		{ type: "section", key: "flowSettings" },
 		{ type: "section", key: "functionSettings" },
 		{ type: "section", key: "outputSettings" }
 	],
@@ -80,9 +228,15 @@ export const functionCallNode = createNodeDescriptor({
 	},
 	function: async ({ cognigy, config }: IFunctionCallNodeParams) => {
 		const { api } = cognigy;
-		const { functionName, payload, outputStorageType, outputStoragePath } = config;
+		const { flowId, flowNodeId, functionName, payload, outputStorageType, outputStoragePath } = config;
 
 		// Validate required fields
+		if (!flowId) {
+			throw new Error("Flow ID is required");
+		}
+		if (!flowNodeId) {
+			throw new Error("Flow Node ID is required");
+		}
 		if (!functionName) {
 			throw new Error("Function Name is required");
 		}
@@ -104,9 +258,15 @@ export const functionCallNode = createNodeDescriptor({
 		// @ts-ignore
 		api.addToInput("functionCall", functionCallData);
 
-		// Execute the flow - the called flow will handle routing, validation, and output storage
-		// Note: The actual flow execution should be configured by the user connecting this node
-		// to an Execute Flow node, or this can be extended to call executeFlow directly
-		api.log("info", `Function call prepared for: ${functionName}`);
+		// Execute the flow with the configured flow and node
+		const executeConfig: IExecuteFlowNodeConfig = {
+			flowNode: {
+				flow: flowId,
+				node: flowNodeId
+			}
+		};
+
+		api.log("info", `Executing function call: ${functionName} -> Flow: ${flowId}, Node: ${flowNodeId}`);
+		await api.executeFlow(executeConfig);
 	}
 });
