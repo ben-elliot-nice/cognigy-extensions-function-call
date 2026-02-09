@@ -1,16 +1,16 @@
 import { createExtension } from "@cognigy/extension-tools";
 
 /* import all nodes */
-import { exampleNode } from "./nodes/exampleNode";
+import { functionCallNode } from "./nodes/functionCallNode";
 
 export default createExtension({
 	nodes: [
-		exampleNode
+		functionCallNode
 	],
 
 	connections: [],
 
 	options: {
-		label: "My Extension"
+		label: "Function Call"
 	}
 });
