@@ -1,10 +1,10 @@
-import { createNodeDescriptor, INodeFunctionBaseParams, IResolverParams } from "@cognigy/extension-tools";
+import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
 import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
 
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
 		apiUrl: string;
-		at: string;
+		apiKey: string;
 		projectId: string;
 		flowId: string;
 		flowNodeId: string;
@@ -28,7 +28,7 @@ export const functionCallNode = createNodeDescriptor({
 			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)"
 		},
 		{
-			key: "at",
+			key: "apiKey",
 			label: "API Token",
 			type: "cognigyText",
 			description: "Cognigy API Token for authentication"
@@ -45,13 +45,16 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the flow to execute",
 			optionsResolver: {
-				dependencies: ["apiUrl", "at", "projectId"],
-				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const apiUrl = config.apiUrl as string | undefined;
-					const at = config.at as string | undefined;
-					const projectId = config.projectId as string | undefined;
+				dependencies: ["apiUrl", "apiKey", "projectId"],
+				resolverFunction: async (params: any) => {
+					const { api, config } = params;
 
-					if (!apiUrl || !at || !projectId) {
+					// Try to get values from config first, fallback to root params
+					const apiUrl = config?.apiUrl || params?.apiUrl;
+					const apiKey = config?.apiKey || params?.apiKey;
+					const projectId = config?.projectId || params?.projectId;
+
+					if (!apiUrl || !apiKey || !projectId) {
 						return [];
 					}
 
@@ -67,7 +70,7 @@ export const functionCallNode = createNodeDescriptor({
 								method: "GET",
 								url: `${apiUrl}/v2.0/flows`,
 								headers: {
-									"X-API-Key": at,
+									"X-API-Key": apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -118,13 +121,16 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the entry point node in the target flow",
 			optionsResolver: {
-				dependencies: ["apiUrl", "at", "flowId"],
-				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const apiUrl = config.apiUrl as string | undefined;
-					const at = config.at as string | undefined;
-					const flowId = config.flowId as string | undefined;
+				dependencies: ["apiUrl", "apiKey", "flowId"],
+				resolverFunction: async (params: any) => {
+					const { api, config } = params;
 
-					if (!apiUrl || !at || !flowId) {
+					// Try to get values from config first, fallback to root params
+					const apiUrl = config?.apiUrl || params?.apiUrl;
+					const apiKey = config?.apiKey || params?.apiKey;
+					const flowId = config?.flowId || params?.flowId;
+
+					if (!apiUrl || !apiKey || !flowId) {
 						return [];
 					}
 
@@ -140,7 +146,7 @@ export const functionCallNode = createNodeDescriptor({
 								method: "GET",
 								url: `${apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
 								headers: {
-									"X-API-Key": at,
+									"X-API-Key": apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -177,19 +183,13 @@ export const functionCallNode = createNodeDescriptor({
 			key: "functionName",
 			label: "Function Name",
 			type: "cognigyText",
-			description: "The name/identifier of the function to execute",
-			params: {
-				required: true
-			}
+			description: "The name/identifier of the function to execute"
 		},
 		{
 			key: "payload",
 			label: "Payload",
 			type: "json",
-			description: "Input data to pass to the function",
-			params: {
-				required: false
-			}
+			description: "Input data to pass to the function"
 		},
 		{
 			key: "outputStorageType",
@@ -201,18 +201,14 @@ export const functionCallNode = createNodeDescriptor({
 				options: [
 					{ label: "Input", value: "input" },
 					{ label: "Context", value: "context" }
-				],
-				required: true
+				]
 			}
 		},
 		{
 			key: "outputStoragePath",
 			label: "Output Storage Path",
 			type: "cognigyText",
-			description: "The exact data path where output should be stored (e.g., 'data.myOutput' or 'myContextKey')",
-			params: {
-				required: true
-			}
+			description: "The exact data path where output should be stored (e.g., 'data.myOutput' or 'myContextKey')"
 		}
 	],
 	sections: [
@@ -220,7 +216,7 @@ export const functionCallNode = createNodeDescriptor({
 			key: "apiSettings",
 			label: "API Settings",
 			defaultCollapsed: false,
-			fields: ["apiUrl", "at", "projectId"]
+			fields: ["apiUrl", "apiKey", "projectId"]
 		},
 		{
 			key: "flowSettings",
