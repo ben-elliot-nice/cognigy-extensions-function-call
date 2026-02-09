@@ -64,17 +64,32 @@ export const functionCallNode = createNodeDescriptor({
 								url: `${connection.apiUrl}/v2.0/flows`,
 								headers: {
 									"X-API-Key": connection.apiKey,
+									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
 								params: {
 									limit,
-									skip
+									skip,
+									projectId: connection.projectId
 								}
 							});
 
-							if (response.data && response.data.items) {
-								allFlows = allFlows.concat(response.data.items);
-								hasMore = response.data.nextCursor !== null;
+							// Handle HAL+JSON format: _embedded.flows
+							if (response.data && response.data._embedded && response.data._embedded.flows) {
+								const flows = response.data._embedded.flows.map((flow: any) => {
+									// Extract flow ID from _links.self.href
+									const href = flow._links?.self?.href || "";
+									const flowId = href.split('/').pop() || flow.properties?.referenceId;
+
+									return {
+										_id: flowId,
+										name: flow.properties?.name,
+										referenceId: flow.properties?.referenceId
+									};
+								});
+
+								allFlows = allFlows.concat(flows);
+								hasMore = response.data._links?.next !== undefined;
 								skip += limit;
 							} else {
 								hasMore = false;
@@ -124,6 +139,7 @@ export const functionCallNode = createNodeDescriptor({
 								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
 								headers: {
 									"X-API-Key": connection.apiKey,
+									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
 								params: {
