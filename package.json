@@ -1,6 +1,6 @@
 {
   "name": "cognigy-extension-function-call",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Cognigy.AI extension for function execution with input/output validation through flow calls",
   "main": "build/module.js",
   "scripts": {
