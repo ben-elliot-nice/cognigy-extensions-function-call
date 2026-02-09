@@ -1,8 +1,15 @@
-import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
+import { createNodeDescriptor, INodeFunctionBaseParams, IResolverParams } from "@cognigy/extension-tools";
 import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
+
+export interface ICognigyApiConnection {
+	apiUrl: string;
+	apiKey: string;
+	projectId: string;
+}
 
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
+		connection: ICognigyApiConnection;
 		flowId: string;
 		flowNodeId: string;
 		functionName: string;
@@ -18,21 +25,134 @@ export const functionCallNode = createNodeDescriptor({
 	summary: "Execute a function with input/output validation through flow calls",
 	fields: [
 		{
-			key: "flowId",
-			label: "Flow ID",
-			type: "cognigyText",
-			description: "The ID of the flow to execute",
+			key: "connection",
+			label: "Cognigy API Connection",
+			type: "connection",
+			description: "Connection to Cognigy API for fetching flows",
 			params: {
+				connectionType: "cognigy-api",
 				required: true
 			}
 		},
 		{
-			key: "flowNodeId",
-			label: "Flow Node ID",
-			type: "cognigyText",
-			description: "The ID of the node to start execution at in the target flow",
+			key: "flowId",
+			label: "Flow",
+			type: "select",
+			description: "Select the flow to execute",
 			params: {
 				required: true
+			},
+			optionsResolver: {
+				dependencies: ["connection"],
+				resolverFunction: async ({ api, config }: IResolverParams) => {
+					const connection = config.connection as ICognigyApiConnection | undefined;
+
+					if (!connection || !connection.apiUrl || !connection.apiKey || !connection.projectId) {
+						return [];
+					}
+
+					try {
+						// Fetch flows with pagination support
+						let allFlows: any[] = [];
+						let skip = 0;
+						const limit = 100;
+						let hasMore = true;
+
+						while (hasMore) {
+							const response = await api.httpRequest({
+								method: "GET",
+								url: `${connection.apiUrl}/v2.0/flows`,
+								headers: {
+									"X-API-Key": connection.apiKey,
+									"Content-Type": "application/json"
+								},
+								params: {
+									limit,
+									skip
+								}
+							});
+
+							if (response.data && response.data.items) {
+								allFlows = allFlows.concat(response.data.items);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
+							} else {
+								hasMore = false;
+							}
+						}
+
+						// Map flows to options array
+						return allFlows.map((flow: any) => ({
+							label: flow.name || flow._id,
+							value: flow._id
+						}));
+					} catch (error) {
+						console.error("Failed to fetch flows:", error);
+						return [];
+					}
+				}
+			}
+		},
+		{
+			key: "flowNodeId",
+			label: "Flow Node",
+			type: "select",
+			description: "Select the entry point node in the target flow",
+			params: {
+				required: true
+			},
+			optionsResolver: {
+				dependencies: ["connection", "flowId"],
+				resolverFunction: async ({ api, config }: IResolverParams) => {
+					const connection = config.connection as ICognigyApiConnection | undefined;
+					const flowId = config.flowId as string | undefined;
+
+					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
+						return [];
+					}
+
+					try {
+						// Fetch nodes with pagination support
+						let allNodes: any[] = [];
+						let skip = 0;
+						const limit = 100;
+						let hasMore = true;
+
+						while (hasMore) {
+							const response = await api.httpRequest({
+								method: "GET",
+								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
+								headers: {
+									"X-API-Key": connection.apiKey,
+									"Content-Type": "application/json"
+								},
+								params: {
+									limit,
+									skip
+								}
+							});
+
+							if (response.data && response.data.items) {
+								allNodes = allNodes.concat(response.data.items);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
+							} else {
+								hasMore = false;
+							}
+						}
+
+						// Filter to only entry point nodes and map to options
+						return allNodes
+							.filter((node: any) => node.isEntryPoint === true)
+							.map((node: any) => ({
+								label: `${node.label || node.type} (${node._id})`,
+								value: node._id
+							}));
+					} catch (error) {
+						console.error("Failed to fetch flow nodes:", error);
+						return [];
+					}
+				}
 			}
 		},
 		{
@@ -82,7 +202,7 @@ export const functionCallNode = createNodeDescriptor({
 			key: "flowSettings",
 			label: "Flow Settings",
 			defaultCollapsed: false,
-			fields: ["flowId", "flowNodeId"]
+			fields: ["connection", "flowId", "flowNodeId"]
 		},
 		{
 			key: "functionSettings",
