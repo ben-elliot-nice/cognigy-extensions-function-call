@@ -25,37 +25,25 @@ export const functionCallNode = createNodeDescriptor({
 			label: "API URL",
 			type: "cognigyText",
 			defaultValue: "https://api-trial.cognigy.ai/new",
-			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)",
-			params: {
-				required: true
-			}
+			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)"
 		},
 		{
 			key: "apiKey",
 			label: "API Key",
 			type: "cognigyText",
-			description: "Cognigy API Key for fetching flows and nodes",
-			params: {
-				required: true
-			}
+			description: "Cognigy API Key for fetching flows and nodes"
 		},
 		{
 			key: "projectId",
 			label: "Project ID",
 			type: "cognigyText",
-			description: "Cognigy Project ID",
-			params: {
-				required: true
-			}
+			description: "Cognigy Project ID"
 		},
 		{
 			key: "flowId",
 			label: "Flow",
 			type: "select",
 			description: "Select the flow to execute",
-			params: {
-				required: true
-			},
 			optionsResolver: {
 				dependencies: ["apiUrl", "apiKey", "projectId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
@@ -129,9 +117,6 @@ export const functionCallNode = createNodeDescriptor({
 			label: "Flow Node",
 			type: "select",
 			description: "Select the entry point node in the target flow",
-			params: {
-				required: true
-			},
 			optionsResolver: {
 				dependencies: ["apiUrl", "apiKey", "flowId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
