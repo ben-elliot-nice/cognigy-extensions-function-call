@@ -107,8 +107,11 @@ export const functionCallNode = createNodeDescriptor({
 								dataKeys: response.data ? Object.keys(response.data) : null
 							});
 
-							// Handle HAL+JSON format: _embedded.flows
+							console.log("[FLOW RESOLVER] FULL RESPONSE DATA", JSON.stringify(response.data, null, 2));
+
+							// Handle different response formats
 							if (response.data && response.data._embedded && response.data._embedded.flows) {
+								// HAL+JSON format with _embedded.flows
 								const flows = response.data._embedded.flows.map((flow: any) => {
 									// Extract flow ID from _links.self.href
 									const href = flow._links?.self?.href || "";
@@ -121,12 +124,25 @@ export const functionCallNode = createNodeDescriptor({
 									};
 								});
 
-								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows`);
+								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows (HAL+JSON format)`);
 								allFlows = allFlows.concat(flows);
 								hasMore = response.data._links?.next !== undefined;
 								skip += limit;
+							} else if (response.data && response.data.items) {
+								// Direct items format
+								const flows = response.data.items.map((flow: any) => ({
+									_id: flow._id || flow.id,
+									name: flow.name || flow._id,
+									referenceId: flow.referenceId
+								}));
+
+								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows (items format)`);
+								allFlows = allFlows.concat(flows);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
 							} else {
-								console.log("[FLOW RESOLVER] No _embedded.flows in response, stopping pagination");
+								console.log("[FLOW RESOLVER] No _embedded.flows or items in response, stopping pagination");
+								console.log("[FLOW RESOLVER] Response structure unknown:", JSON.stringify(response.data, null, 2).substring(0, 500));
 								hasMore = false;
 							}
 						}
