@@ -1,15 +1,11 @@
 import { createNodeDescriptor, INodeFunctionBaseParams, IResolverParams } from "@cognigy/extension-tools";
 import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
 
-export interface ICognigyApiConnection {
-	apiUrl: string;
-	apiKey: string;
-	projectId: string;
-}
-
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
-		connection: ICognigyApiConnection;
+		apiUrl: string;
+		apiKey: string;
+		projectId: string;
 		flowId: string;
 		flowNodeId: string;
 		functionName: string;
@@ -25,12 +21,30 @@ export const functionCallNode = createNodeDescriptor({
 	summary: "Execute a function with input/output validation through flow calls",
 	fields: [
 		{
-			key: "connection",
-			label: "Cognigy API Connection",
-			type: "connection",
-			description: "Connection to Cognigy API for fetching flows",
+			key: "apiUrl",
+			label: "API URL",
+			type: "cognigyText",
+			defaultValue: "https://api-trial.cognigy.ai/new",
+			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)",
 			params: {
-				connectionType: "cognigy-api",
+				required: true
+			}
+		},
+		{
+			key: "apiKey",
+			label: "API Key",
+			type: "cognigyText",
+			description: "Cognigy API Key for fetching flows and nodes",
+			params: {
+				required: true
+			}
+		},
+		{
+			key: "projectId",
+			label: "Project ID",
+			type: "cognigyText",
+			description: "Cognigy Project ID",
+			params: {
 				required: true
 			}
 		},
@@ -43,11 +57,13 @@ export const functionCallNode = createNodeDescriptor({
 				required: true
 			},
 			optionsResolver: {
-				dependencies: ["connection"],
+				dependencies: ["apiUrl", "apiKey", "projectId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const connection = config.connection as ICognigyApiConnection | undefined;
+					const apiUrl = config.apiUrl as string | undefined;
+					const apiKey = config.apiKey as string | undefined;
+					const projectId = config.projectId as string | undefined;
 
-					if (!connection || !connection.apiUrl || !connection.apiKey || !connection.projectId) {
+					if (!apiUrl || !apiKey || !projectId) {
 						return [];
 					}
 
@@ -61,16 +77,16 @@ export const functionCallNode = createNodeDescriptor({
 						while (hasMore) {
 							const response = await api.httpRequest({
 								method: "GET",
-								url: `${connection.apiUrl}/v2.0/flows`,
+								url: `${apiUrl}/v2.0/flows`,
 								headers: {
-									"X-API-Key": connection.apiKey,
+									"X-API-Key": apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
 								params: {
 									limit,
 									skip,
-									projectId: connection.projectId
+									projectId
 								}
 							});
 
@@ -117,12 +133,13 @@ export const functionCallNode = createNodeDescriptor({
 				required: true
 			},
 			optionsResolver: {
-				dependencies: ["connection", "flowId"],
+				dependencies: ["apiUrl", "apiKey", "flowId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const connection = config.connection as ICognigyApiConnection | undefined;
+					const apiUrl = config.apiUrl as string | undefined;
+					const apiKey = config.apiKey as string | undefined;
 					const flowId = config.flowId as string | undefined;
 
-					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
+					if (!apiUrl || !apiKey || !flowId) {
 						return [];
 					}
 
@@ -136,9 +153,9 @@ export const functionCallNode = createNodeDescriptor({
 						while (hasMore) {
 							const response = await api.httpRequest({
 								method: "GET",
-								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
+								url: `${apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
 								headers: {
-									"X-API-Key": connection.apiKey,
+									"X-API-Key": apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -215,10 +232,16 @@ export const functionCallNode = createNodeDescriptor({
 	],
 	sections: [
 		{
+			key: "apiSettings",
+			label: "API Settings",
+			defaultCollapsed: false,
+			fields: ["apiUrl", "apiKey", "projectId"]
+		},
+		{
 			key: "flowSettings",
 			label: "Flow Settings",
 			defaultCollapsed: false,
-			fields: ["connection", "flowId", "flowNodeId"]
+			fields: ["flowId", "flowNodeId"]
 		},
 		{
 			key: "functionSettings",
@@ -234,6 +257,7 @@ export const functionCallNode = createNodeDescriptor({
 		}
 	],
 	form: [
+		{ type: "section", key: "apiSettings" },
 		{ type: "section", key: "flowSettings" },
 		{ type: "section", key: "functionSettings" },
 		{ type: "section", key: "outputSettings" }
