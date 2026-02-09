@@ -1,11 +1,15 @@
 import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
 import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
 
+export interface ICognigyApiConnection {
+	apiUrl: string;
+	apiKey: string;
+	projectId: string;
+}
+
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
-		apiUrl: string;
-		apiKey: string;
-		projectId: string;
+		connection: ICognigyApiConnection;
 		flowId: string;
 		flowNodeId: string;
 		functionName: string;
@@ -21,23 +25,13 @@ export const functionCallNode = createNodeDescriptor({
 	summary: "Execute a function with input/output validation through flow calls",
 	fields: [
 		{
-			key: "apiUrl",
-			label: "API URL",
-			type: "cognigyText",
-			defaultValue: "https://api-trial.cognigy.ai/new",
-			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)"
-		},
-		{
-			key: "apiKey",
-			label: "API Token",
-			type: "cognigyText",
-			description: "Cognigy API Token for authentication"
-		},
-		{
-			key: "projectId",
-			label: "Project ID",
-			type: "cognigyText",
-			description: "Cognigy Project ID"
+			key: "connection",
+			label: "Cognigy API Connection",
+			type: "connection",
+			description: "Connection to Cognigy API for fetching flows",
+			params: {
+				connectionType: "cognigy-api"
+			}
 		},
 		{
 			key: "flowId",
@@ -45,16 +39,14 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the flow to execute",
 			optionsResolver: {
-				dependencies: ["apiUrl", "apiKey", "projectId"],
+				dependencies: ["connection"],
 				resolverFunction: async (params: any) => {
 					const { api, config } = params;
 
-					// Try to get values from config first, fallback to root params
-					const apiUrl = config?.apiUrl || params?.apiUrl;
-					const apiKey = config?.apiKey || params?.apiKey;
-					const projectId = config?.projectId || params?.projectId;
+					// Try to get connection from config first, fallback to root params
+					const connection = config?.connection || params?.connection;
 
-					if (!apiUrl || !apiKey || !projectId) {
+					if (!connection || !connection.apiUrl || !connection.apiKey || !connection.projectId) {
 						return [];
 					}
 
@@ -68,16 +60,16 @@ export const functionCallNode = createNodeDescriptor({
 						while (hasMore) {
 							const response = await api.httpRequest({
 								method: "GET",
-								url: `${apiUrl}/v2.0/flows`,
+								url: `${connection.apiUrl}/v2.0/flows`,
 								headers: {
-									"X-API-Key": apiKey,
+									"X-API-Key": connection.apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
 								params: {
 									limit,
 									skip,
-									projectId
+									projectId: connection.projectId
 								}
 							});
 
@@ -121,16 +113,15 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the entry point node in the target flow",
 			optionsResolver: {
-				dependencies: ["apiUrl", "apiKey", "flowId"],
+				dependencies: ["connection", "flowId"],
 				resolverFunction: async (params: any) => {
 					const { api, config } = params;
 
-					// Try to get values from config first, fallback to root params
-					const apiUrl = config?.apiUrl || params?.apiUrl;
-					const apiKey = config?.apiKey || params?.apiKey;
+					// Try to get connection from config first, fallback to root params
+					const connection = config?.connection || params?.connection;
 					const flowId = config?.flowId || params?.flowId;
 
-					if (!apiUrl || !apiKey || !flowId) {
+					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
 						return [];
 					}
 
@@ -144,9 +135,9 @@ export const functionCallNode = createNodeDescriptor({
 						while (hasMore) {
 							const response = await api.httpRequest({
 								method: "GET",
-								url: `${apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
+								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
 								headers: {
-									"X-API-Key": apiKey,
+									"X-API-Key": connection.apiKey,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -213,10 +204,10 @@ export const functionCallNode = createNodeDescriptor({
 	],
 	sections: [
 		{
-			key: "apiSettings",
-			label: "API Settings",
+			key: "connectionSettings",
+			label: "Connection",
 			defaultCollapsed: false,
-			fields: ["apiUrl", "apiKey", "projectId"]
+			fields: ["connection"]
 		},
 		{
 			key: "flowSettings",
@@ -238,7 +229,7 @@ export const functionCallNode = createNodeDescriptor({
 		}
 	],
 	form: [
-		{ type: "section", key: "apiSettings" },
+		{ type: "section", key: "connectionSettings" },
 		{ type: "section", key: "flowSettings" },
 		{ type: "section", key: "functionSettings" },
 		{ type: "section", key: "outputSettings" }
