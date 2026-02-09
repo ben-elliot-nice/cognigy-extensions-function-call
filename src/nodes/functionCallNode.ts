@@ -1,7 +1,10 @@
 import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
+import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
 
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
+		flowId: string;
+		flowNodeId: string;
 		functionName: string;
 		payload: any;
 		outputStorageType: string;
@@ -14,6 +17,24 @@ export const functionCallNode = createNodeDescriptor({
 	defaultLabel: "Function Call",
 	summary: "Execute a function with input/output validation through flow calls",
 	fields: [
+		{
+			key: "flowId",
+			label: "Flow ID",
+			type: "cognigyText",
+			description: "The ID of the flow to execute",
+			params: {
+				required: true
+			}
+		},
+		{
+			key: "flowNodeId",
+			label: "Flow Node ID",
+			type: "cognigyText",
+			description: "The ID of the node to start execution at in the target flow",
+			params: {
+				required: true
+			}
+		},
 		{
 			key: "functionName",
 			label: "Function Name",
@@ -58,6 +79,12 @@ export const functionCallNode = createNodeDescriptor({
 	],
 	sections: [
 		{
+			key: "flowSettings",
+			label: "Flow Settings",
+			defaultCollapsed: false,
+			fields: ["flowId", "flowNodeId"]
+		},
+		{
 			key: "functionSettings",
 			label: "Function Settings",
 			defaultCollapsed: false,
@@ -71,6 +98,7 @@ export const functionCallNode = createNodeDescriptor({
 		}
 	],
 	form: [
+		{ type: "section", key: "flowSettings" },
 		{ type: "section", key: "functionSettings" },
 		{ type: "section", key: "outputSettings" }
 	],
@@ -80,9 +108,15 @@ export const functionCallNode = createNodeDescriptor({
 	},
 	function: async ({ cognigy, config }: IFunctionCallNodeParams) => {
 		const { api } = cognigy;
-		const { functionName, payload, outputStorageType, outputStoragePath } = config;
+		const { flowId, flowNodeId, functionName, payload, outputStorageType, outputStoragePath } = config;
 
 		// Validate required fields
+		if (!flowId) {
+			throw new Error("Flow ID is required");
+		}
+		if (!flowNodeId) {
+			throw new Error("Flow Node ID is required");
+		}
 		if (!functionName) {
 			throw new Error("Function Name is required");
 		}
@@ -104,9 +138,15 @@ export const functionCallNode = createNodeDescriptor({
 		// @ts-ignore
 		api.addToInput("functionCall", functionCallData);
 
-		// Execute the flow - the called flow will handle routing, validation, and output storage
-		// Note: The actual flow execution should be configured by the user connecting this node
-		// to an Execute Flow node, or this can be extended to call executeFlow directly
-		api.log("info", `Function call prepared for: ${functionName}`);
+		// Execute the flow with the configured flow and node
+		const executeConfig: IExecuteFlowNodeConfig = {
+			flowNode: {
+				flow: flowId,
+				node: flowNodeId
+			}
+		};
+
+		api.log("info", `Executing function call: ${functionName} -> Flow: ${flowId}, Node: ${flowNodeId}`);
+		await api.executeFlow(executeConfig);
 	}
 });
