@@ -4,7 +4,7 @@ import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interface
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
 	config: {
 		apiUrl: string;
-		apiKey: string;
+		at: string;
 		projectId: string;
 		flowId: string;
 		flowNodeId: string;
@@ -28,10 +28,10 @@ export const functionCallNode = createNodeDescriptor({
 			description: "Cognigy API base URL (e.g., https://api-trial.cognigy.ai/new)"
 		},
 		{
-			key: "apiKey",
-			label: "API Key",
+			key: "at",
+			label: "API Token",
 			type: "cognigyText",
-			description: "Cognigy API Key for fetching flows and nodes"
+			description: "Cognigy API Token for authentication"
 		},
 		{
 			key: "projectId",
@@ -45,13 +45,13 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the flow to execute",
 			optionsResolver: {
-				dependencies: ["apiUrl", "apiKey", "projectId"],
+				dependencies: ["apiUrl", "at", "projectId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
 					const apiUrl = config.apiUrl as string | undefined;
-					const apiKey = config.apiKey as string | undefined;
+					const at = config.at as string | undefined;
 					const projectId = config.projectId as string | undefined;
 
-					if (!apiUrl || !apiKey || !projectId) {
+					if (!apiUrl || !at || !projectId) {
 						return [];
 					}
 
@@ -67,7 +67,7 @@ export const functionCallNode = createNodeDescriptor({
 								method: "GET",
 								url: `${apiUrl}/v2.0/flows`,
 								headers: {
-									"X-API-Key": apiKey,
+									"X-API-Key": at,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -118,13 +118,13 @@ export const functionCallNode = createNodeDescriptor({
 			type: "select",
 			description: "Select the entry point node in the target flow",
 			optionsResolver: {
-				dependencies: ["apiUrl", "apiKey", "flowId"],
+				dependencies: ["apiUrl", "at", "flowId"],
 				resolverFunction: async ({ api, config }: IResolverParams) => {
 					const apiUrl = config.apiUrl as string | undefined;
-					const apiKey = config.apiKey as string | undefined;
+					const at = config.at as string | undefined;
 					const flowId = config.flowId as string | undefined;
 
-					if (!apiUrl || !apiKey || !flowId) {
+					if (!apiUrl || !at || !flowId) {
 						return [];
 					}
 
@@ -140,7 +140,7 @@ export const functionCallNode = createNodeDescriptor({
 								method: "GET",
 								url: `${apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
 								headers: {
-									"X-API-Key": apiKey,
+									"X-API-Key": at,
 									"Accept": "application/json",
 									"Content-Type": "application/json"
 								},
@@ -220,7 +220,7 @@ export const functionCallNode = createNodeDescriptor({
 			key: "apiSettings",
 			label: "API Settings",
 			defaultCollapsed: false,
-			fields: ["apiUrl", "apiKey", "projectId"]
+			fields: ["apiUrl", "at", "projectId"]
 		},
 		{
 			key: "flowSettings",
