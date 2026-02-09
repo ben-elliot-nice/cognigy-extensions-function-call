@@ -1,4 +1,4 @@
-import { createNodeDescriptor, INodeFunctionBaseParams, IResolverParams } from "@cognigy/extension-tools";
+import { createNodeDescriptor, INodeFunctionBaseParams } from "@cognigy/extension-tools";
 import { IExecuteFlowNodeConfig } from "@cognigy/extension-tools/build/interfaces/executeFlow";
 
 export interface IFunctionCallNodeParams extends INodeFunctionBaseParams {
@@ -29,9 +29,9 @@ export const functionCallNode = createNodeDescriptor({
 		},
 		{
 			key: "apiKey",
-			label: "API Key",
+			label: "API Token",
 			type: "cognigyText",
-			description: "Cognigy API Key for fetching flows and nodes"
+			description: "Cognigy API Token for authentication"
 		},
 		{
 			key: "projectId",
@@ -46,10 +46,13 @@ export const functionCallNode = createNodeDescriptor({
 			description: "Select the flow to execute",
 			optionsResolver: {
 				dependencies: ["apiUrl", "apiKey", "projectId"],
-				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const apiUrl = config.apiUrl as string | undefined;
-					const apiKey = config.apiKey as string | undefined;
-					const projectId = config.projectId as string | undefined;
+				resolverFunction: async (params: any) => {
+					const { api, config } = params;
+
+					// Try to get values from config first, fallback to root params
+					const apiUrl = config?.apiUrl || params?.apiUrl;
+					const apiKey = config?.apiKey || params?.apiKey;
+					const projectId = config?.projectId || params?.projectId;
 
 					if (!apiUrl || !apiKey || !projectId) {
 						return [];
@@ -119,10 +122,13 @@ export const functionCallNode = createNodeDescriptor({
 			description: "Select the entry point node in the target flow",
 			optionsResolver: {
 				dependencies: ["apiUrl", "apiKey", "flowId"],
-				resolverFunction: async ({ api, config }: IResolverParams) => {
-					const apiUrl = config.apiUrl as string | undefined;
-					const apiKey = config.apiKey as string | undefined;
-					const flowId = config.flowId as string | undefined;
+				resolverFunction: async (params: any) => {
+					const { api, config } = params;
+
+					// Try to get values from config first, fallback to root params
+					const apiUrl = config?.apiUrl || params?.apiUrl;
+					const apiKey = config?.apiKey || params?.apiKey;
+					const flowId = config?.flowId || params?.flowId;
 
 					if (!apiUrl || !apiKey || !flowId) {
 						return [];
@@ -177,19 +183,13 @@ export const functionCallNode = createNodeDescriptor({
 			key: "functionName",
 			label: "Function Name",
 			type: "cognigyText",
-			description: "The name/identifier of the function to execute",
-			params: {
-				required: true
-			}
+			description: "The name/identifier of the function to execute"
 		},
 		{
 			key: "payload",
 			label: "Payload",
 			type: "json",
-			description: "Input data to pass to the function",
-			params: {
-				required: false
-			}
+			description: "Input data to pass to the function"
 		},
 		{
 			key: "outputStorageType",
@@ -201,18 +201,14 @@ export const functionCallNode = createNodeDescriptor({
 				options: [
 					{ label: "Input", value: "input" },
 					{ label: "Context", value: "context" }
-				],
-				required: true
+				]
 			}
 		},
 		{
 			key: "outputStoragePath",
 			label: "Output Storage Path",
 			type: "cognigyText",
-			description: "The exact data path where output should be stored (e.g., 'data.myOutput' or 'myContextKey')",
-			params: {
-				required: true
-			}
+			description: "The exact data path where output should be stored (e.g., 'data.myOutput' or 'myContextKey')"
 		}
 	],
 	sections: [
