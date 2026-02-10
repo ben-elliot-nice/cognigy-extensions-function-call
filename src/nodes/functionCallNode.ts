@@ -107,36 +107,52 @@ export const functionCallNode = createNodeDescriptor({
 								dataKeys: response.data ? Object.keys(response.data) : null
 							});
 
-							// Handle HAL+JSON format: _embedded.flows
-							if (response.data && response.data._embedded && response.data._embedded.flows) {
-								const flows = response.data._embedded.flows.map((flow: any) => {
-									// Extract flow ID from _links.self.href
-									const href = flow._links?.self?.href || "";
-									const flowId = href.split('/').pop() || flow.properties?.referenceId;
+							console.log("[FLOW RESOLVER] FULL RESPONSE DATA", JSON.stringify(response.data, null, 2));
 
+							// Handle different response formats
+							if (response.data && response.data._embedded && response.data._embedded.flows) {
+								// HAL+JSON format with _embedded.flows
+								const flows = response.data._embedded.flows.map((flow: any) => {
+									// Use referenceId for executeFlow API
 									return {
-										_id: flowId,
+										_id: flow._id,
 										name: flow.properties?.name,
 										referenceId: flow.properties?.referenceId
 									};
 								});
 
-								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows`);
+								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows (HAL+JSON format)`);
 								allFlows = allFlows.concat(flows);
 								hasMore = response.data._links?.next !== undefined;
 								skip += limit;
+							} else if (response.data && response.data.items) {
+								// Direct items format
+								const flows = response.data.items.map((flow: any) => ({
+									_id: flow._id || flow.id,
+									name: flow.name || flow._id,
+									referenceId: flow.referenceId
+								}));
+
+								console.log(`[FLOW RESOLVER] Page ${pageCount}: found ${flows.length} flows (items format)`);
+								allFlows = allFlows.concat(flows);
+								hasMore = response.data.nextCursor !== null;
+								skip += limit;
 							} else {
-								console.log("[FLOW RESOLVER] No _embedded.flows in response, stopping pagination");
+								console.log("[FLOW RESOLVER] No _embedded.flows or items in response, stopping pagination");
+								console.log("[FLOW RESOLVER] Response structure unknown:", JSON.stringify(response.data, null, 2).substring(0, 500));
 								hasMore = false;
 							}
 						}
 
 						console.log(`[FLOW RESOLVER] Total flows fetched: ${allFlows.length}`);
 
-						// Map flows to options array
+						// Map flows to options array - store both _id and referenceId
 						const options = allFlows.map((flow: any) => ({
 							label: flow.name || flow._id,
-							value: flow._id
+							value: JSON.stringify({
+								_id: flow._id,
+								referenceId: flow.referenceId
+							})
 						}));
 
 						console.log("[FLOW RESOLVER] Returning options", options.map(o => ({ label: o.label, value: o.value })));
@@ -164,7 +180,7 @@ export const functionCallNode = createNodeDescriptor({
 
 					// Try to get connection from config first, fallback to root params
 					const connection = config?.connection || params?.connection;
-					const flowId = config?.flowId || params?.flowId;
+					let flowId = config?.flowId || params?.flowId;
 
 					console.log("[NODE RESOLVER] Extracted data", {
 						hasConnection: !!connection,
@@ -172,12 +188,25 @@ export const functionCallNode = createNodeDescriptor({
 						flowId
 					});
 
-					if (!connection || !connection.apiUrl || !connection.apiKey || !flowId) {
+					// Parse flowId to get _id (for API calls) and referenceId (for executeFlow)
+					let flowInternalId = flowId;
+					try {
+						const parsed = JSON.parse(flowId);
+						if (parsed._id) {
+							flowInternalId = parsed._id;
+							console.log("[NODE RESOLVER] Parsed flow _id from JSON", { flowInternalId });
+						}
+					} catch (e) {
+						// flowId is not JSON, use as-is
+						console.log("[NODE RESOLVER] flowId is not JSON, using as-is");
+					}
+
+					if (!connection || !connection.apiUrl || !connection.apiKey || !flowInternalId) {
 						console.log("[NODE RESOLVER] Missing required data, returning empty");
 						return [];
 					}
 
-					console.log("[NODE RESOLVER] Fetching nodes for flow", { flowId });
+					console.log("[NODE RESOLVER] Fetching nodes for flow", { flowInternalId });
 
 					try {
 						// Fetch nodes with pagination support
@@ -193,7 +222,7 @@ export const functionCallNode = createNodeDescriptor({
 
 							const response = await api.httpRequest({
 								method: "GET",
-								url: `${connection.apiUrl}/v2.0/flows/${flowId}/chart/nodes`,
+								url: `${connection.apiUrl}/v2.0/flows/${flowInternalId}/chart/nodes`,
 								headers: {
 									"X-API-Key": connection.apiKey,
 									"Accept": "application/json",
@@ -227,10 +256,13 @@ export const functionCallNode = createNodeDescriptor({
 						const entryPoints = allNodes.filter((node: any) => node.isEntryPoint === true);
 						console.log(`[NODE RESOLVER] Entry points found: ${entryPoints.length}`);
 
-						// Filter to only entry point nodes and map to options
+						// Filter to only entry point nodes and map to options - use referenceId
 						const options = entryPoints.map((node: any) => ({
 							label: `${node.label || node.type} (${node._id})`,
-							value: node._id
+							value: JSON.stringify({
+								_id: node._id,
+								referenceId: node.referenceId
+							})
 						}));
 
 						console.log("[NODE RESOLVER] Returning options", options.map(o => ({ label: o.label, value: o.value })));
@@ -314,9 +346,10 @@ export const functionCallNode = createNodeDescriptor({
 		console.log("[NODE EXECUTION] Function Call node executing");
 
 		const { api } = cognigy;
-		const { flowId, flowNodeId, functionName, payload, outputStorageType, outputStoragePath } = config;
+		const { connection, flowId, flowNodeId, functionName, payload, outputStorageType, outputStoragePath } = config;
 
 		console.log("[NODE EXECUTION] Config", {
+			hasConnection: !!connection,
 			flowId,
 			flowNodeId,
 			functionName,
@@ -325,25 +358,31 @@ export const functionCallNode = createNodeDescriptor({
 			outputStoragePath
 		});
 
-		// Validate required fields
-		if (!flowId) {
-			console.error("[NODE EXECUTION] Validation failed: Flow ID is required");
-			throw new Error("Flow ID is required");
-		}
-		if (!flowNodeId) {
-			console.error("[NODE EXECUTION] Validation failed: Flow Node ID is required");
-			throw new Error("Flow Node ID is required");
-		}
-		if (!functionName) {
-			console.error("[NODE EXECUTION] Validation failed: Function Name is required");
-			throw new Error("Function Name is required");
-		}
-		if (!outputStoragePath) {
-			console.error("[NODE EXECUTION] Validation failed: Output Storage Path is required");
-			throw new Error("Output Storage Path is required");
+		// Parse flowId to get referenceId for executeFlow
+		let flowReferenceId = flowId;
+		try {
+			const parsed = JSON.parse(flowId);
+			if (parsed.referenceId) {
+				flowReferenceId = parsed.referenceId;
+				console.log("[NODE EXECUTION] Parsed flow referenceId from JSON", { flowReferenceId });
+			}
+		} catch (e) {
+			console.log("[NODE EXECUTION] flowId is not JSON, using as-is");
 		}
 
-		console.log("[NODE EXECUTION] Validation passed");
+		// Parse flowNodeId to get referenceId for executeFlow
+		let nodeReferenceId = flowNodeId;
+		try {
+			const parsed = JSON.parse(flowNodeId);
+			if (parsed.referenceId) {
+				nodeReferenceId = parsed.referenceId;
+				console.log("[NODE EXECUTION] Parsed node referenceId from JSON", { nodeReferenceId });
+			}
+		} catch (e) {
+			console.log("[NODE EXECUTION] flowNodeId is not JSON, using as-is");
+		}
+
+		console.log("[NODE EXECUTION] Using referenceIds for executeFlow", { flowReferenceId, nodeReferenceId });
 
 		// Structure the function call data on input
 		const functionCallData = {
@@ -362,16 +401,16 @@ export const functionCallNode = createNodeDescriptor({
 		api.addToInput("functionCall", functionCallData);
 		console.log("[NODE EXECUTION] Stored functionCallData in input");
 
-		// Execute the flow with the configured flow and node
+		// Use referenceIds for executeFlow API
 		const executeConfig: IExecuteFlowNodeConfig = {
 			flowNode: {
-				flow: flowId,
-				node: flowNodeId
+				flow: flowReferenceId,
+				node: nodeReferenceId
 			}
 		};
 
-		console.log("[NODE EXECUTION] Executing flow", executeConfig);
-		api.log("info", `Executing function call: ${functionName} -> Flow: ${flowId}, Node: ${flowNodeId}`);
+		console.log("[NODE EXECUTION] Executing flow with referenceIds", { flowReferenceId, nodeReferenceId });
+		api.log("info", `Executing function call: ${functionName} -> Flow: ${flowReferenceId}, Node: ${nodeReferenceId}`);
 		await api.executeFlow(executeConfig);
 		console.log("[NODE EXECUTION] Flow execution completed");
 	}
